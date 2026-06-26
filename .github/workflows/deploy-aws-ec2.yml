@@ -72,11 +72,9 @@ jobs:
 
           mkdir -p \
             deploy-bundle/services \
-            deploy-bundle/deploy/aws \
-            deploy-bundle/postgres
+            deploy-bundle/deploy/aws
 
           cp -R deploy/aws/. deploy-bundle/deploy/aws/
-          cp -R services/postgres/init deploy-bundle/postgres/init
 
           for service in "${services[@]}"; do
             source_jar="services/$service/target/$service-1.0.0-SNAPSHOT.jar"

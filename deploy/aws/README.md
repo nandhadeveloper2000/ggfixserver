@@ -3,7 +3,7 @@
 This deploys the Spring Boot backend services to one EC2 host with:
 
 - Java 21
-- Dockerized PostgreSQL 16
+- AWS RDS PostgreSQL (managed outside this host - no local database container)
 - systemd services named `repair-shop-saas@<service>`
 - GitHub Actions SSH deployment
 
@@ -16,7 +16,10 @@ cd epair-shop-saas
 bash deploy/aws/install-ec2.sh
 ```
 
-The deploy script creates `/opt/repair-shop-saas/.env` on first deploy. Edit it if you need different services or Cloudinary credentials:
+The deploy script writes `/opt/repair-shop-saas/.env` on every deploy, pointing the
+services at the RDS database (`DB_HOST`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` defaults baked
+into `deploy-from-artifact.sh`). The JWT secret and Cloudinary values are preserved
+across deploys. Edit the file if you need different services or Cloudinary credentials:
 
 ```bash
 sudo nano /opt/repair-shop-saas/.env
@@ -40,6 +43,5 @@ Then run the `Deploy Backend to AWS EC2` workflow manually, or push to `main`.
 ```bash
 sudo systemctl status repair-shop-saas@auth-service
 sudo journalctl -u repair-shop-saas@auth-service -f
-sudo docker ps
 ```
 
