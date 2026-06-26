@@ -26,6 +26,7 @@ jobs:
     env:
       EC2_HOST: ${{ secrets.EC2_HOST }}
       EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_PORT: "22"
       EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
       EC2_SSH_PRIVATE_KEY_B64: ${{ secrets.EC2_SSH_PRIVATE_KEY_B64 }}
 
@@ -41,8 +42,10 @@ jobs:
           cache: maven
 
       - name: Build backend services
+        shell: bash
         run: |
           set -euo pipefail
+
           mvn -f services/pom.xml clean package -DskipTests
 
       - name: Create deployment bundle
@@ -76,20 +79,24 @@ jobs:
           cp -R services/postgres/init deploy-bundle/postgres/init
 
           for service in "${services[@]}"; do
-            jar_file="services/$service/target/$service-1.0.0-SNAPSHOT.jar"
+            source_jar="services/$service/target/$service-1.0.0-SNAPSHOT.jar"
+            destination_dir="deploy-bundle/services/$service"
+            destination_jar="$destination_dir/$service.jar"
 
-            if [ ! -f "$jar_file" ]; then
-              echo "ERROR: JAR file not found: $jar_file"
+            if [ ! -f "$source_jar" ]; then
+              echo "ERROR: JAR file not found: $source_jar"
+              echo "Available files in services/$service/target:"
+              ls -lah "services/$service/target" || true
               exit 1
             fi
 
-            mkdir -p "deploy-bundle/services/$service"
-            cp "$jar_file" "deploy-bundle/services/$service/$service.jar"
+            mkdir -p "$destination_dir"
+            cp "$source_jar" "$destination_jar"
           done
 
           tar -czf repair-shop-saas-deploy.tgz -C deploy-bundle .
 
-          echo "Deployment bundle created successfully."
+          echo "Deployment archive created:"
           ls -lh repair-shop-saas-deploy.tgz
 
       - name: Configure SSH
@@ -104,12 +111,15 @@ jobs:
 
           install -d -m 700 "$HOME/.ssh"
 
-          printf '%s' "$EC2_SSH_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.ssh/id_ed25519"
+          printf '%s' "$EC2_SSH_PRIVATE_KEY_B64" \
+            | base64 --decode > "$HOME/.ssh/id_ed25519"
+
           chmod 600 "$HOME/.ssh/id_ed25519"
 
           printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
+          echo "Checking private key format..."
           ssh-keygen -lf "$HOME/.ssh/id_ed25519"
 
       - name: Verify EC2 SSH connection
@@ -119,21 +129,119 @@ jobs:
 
           ssh \
             -i "$HOME/.ssh/id_ed25519" \
+            -p "$EC2_PORT" \
             -o StrictHostKeyChecking=yes \
             -o ConnectTimeout=20 \
             "$EC2_USER@$EC2_HOST" \
-            "echo 'SSH connection successful'; hostname; whoami"
+            '
+              set -euo pipefail
+
+              echo "SSH connection successful"
+              echo "Host: $(hostname)"
+              echo "User: $(whoami)"
+              echo "Home: $HOME"
+            '
+
+      - name: Prepare EC2 deployment directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ARCHIVE_SIZE_KB="$(du -k repair-shop-saas-deploy.tgz | awk "{print \$1}")"
+
+          ssh \
+            -i "$HOME/.ssh/id_ed25519" \
+            -p "$EC2_PORT" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "ARCHIVE_SIZE_KB='$ARCHIVE_SIZE_KB' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          DEPLOY_DIR="$HOME/ggfix-deploy"
+          ARCHIVE="$DEPLOY_DIR/repair-shop-saas-deploy.tgz"
+          RELEASE_DIR="$DEPLOY_DIR/release"
+
+          mkdir -p "$DEPLOY_DIR"
+
+          echo "Removing old deployment files..."
+          rm -f "$ARCHIVE"
+          rm -rf "$RELEASE_DIR"
+
+          echo ""
+          echo "=== Disk usage ==="
+          df -h "$HOME"
+          echo ""
+
+          echo "=== Inode usage ==="
+          df -i "$HOME"
+          echo ""
+
+          echo "=== Deployment directory ==="
+          ls -ld "$DEPLOY_DIR"
+          echo ""
+
+          echo "Testing write permission..."
+          touch "$DEPLOY_DIR/write-test"
+          rm -f "$DEPLOY_DIR/write-test"
+
+          AVAILABLE_KB="$(df -Pk "$HOME" | awk 'NR==2 {print $4}')"
+
+          # Archive + extracted release + minimum 200 MB safety buffer.
+          REQUIRED_KB=$((ARCHIVE_SIZE_KB * 3 + 204800))
+
+          echo "Archive size: ${ARCHIVE_SIZE_KB} KB"
+          echo "Required free space: ${REQUIRED_KB} KB"
+          echo "Available free space: ${AVAILABLE_KB} KB"
+
+          if [ "$AVAILABLE_KB" -lt "$REQUIRED_KB" ]; then
+            echo "ERROR: EC2 disk space is too low for deployment."
+            echo "Free disk space before deploying, then run the workflow again."
+            exit 1
+          fi
+
+          echo "EC2 deployment directory is ready."
+          REMOTE_SCRIPT
 
       - name: Upload deployment bundle
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "Uploading deployment archive to EC2..."
+
           scp \
+            -v \
             -i "$HOME/.ssh/id_ed25519" \
+            -P "$EC2_PORT" \
             -o StrictHostKeyChecking=yes \
             repair-shop-saas-deploy.tgz \
-            "$EC2_USER@$EC2_HOST:/tmp/repair-shop-saas-deploy.tgz"
+            "$EC2_USER@$EC2_HOST:ggfix-deploy/repair-shop-saas-deploy.tgz"
+
+      - name: Verify uploaded deployment bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LOCAL_SHA256="$(sha256sum repair-shop-saas-deploy.tgz | awk "{print \$1}")"
+
+          REMOTE_SHA256="$(
+            ssh \
+              -i "$HOME/.ssh/id_ed25519" \
+              -p "$EC2_PORT" \
+              -o StrictHostKeyChecking=yes \
+              "$EC2_USER@$EC2_HOST" \
+              "sha256sum ~/ggfix-deploy/repair-shop-saas-deploy.tgz | awk '{print \$1}'"
+          )"
+
+          echo "Local SHA256:  $LOCAL_SHA256"
+          echo "Remote SHA256: $REMOTE_SHA256"
+
+          if [ "$LOCAL_SHA256" != "$REMOTE_SHA256" ]; then
+            echo "ERROR: Uploaded archive checksum does not match local file."
+            exit 1
+          fi
+
+          echo "Archive upload verified successfully."
 
       - name: Deploy on EC2
         shell: bash
@@ -142,21 +250,50 @@ jobs:
 
           ssh \
             -i "$HOME/.ssh/id_ed25519" \
+            -p "$EC2_PORT" \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
             'bash -s' <<'REMOTE_SCRIPT'
-              set -euo pipefail
+          set -euo pipefail
 
-              RELEASE_DIR="/tmp/repair-shop-saas-release"
+          DEPLOY_DIR="$HOME/ggfix-deploy"
+          ARCHIVE="$DEPLOY_DIR/repair-shop-saas-deploy.tgz"
+          RELEASE_DIR="$DEPLOY_DIR/release"
 
-              rm -rf "$RELEASE_DIR"
-              mkdir -p "$RELEASE_DIR"
+          if [ ! -f "$ARCHIVE" ]; then
+            echo "ERROR: Deployment archive not found: $ARCHIVE"
+            exit 1
+          fi
 
-              tar -xzf /tmp/repair-shop-saas-deploy.tgz -C "$RELEASE_DIR"
+          rm -rf "$RELEASE_DIR"
+          mkdir -p "$RELEASE_DIR"
 
-              chmod +x "$RELEASE_DIR/deploy/aws/install-ec2.sh"
-              chmod +x "$RELEASE_DIR/deploy/aws/deploy-from-artifact.sh"
+          echo "Extracting deployment archive..."
+          tar -xzf "$ARCHIVE" -C "$RELEASE_DIR"
 
-              bash "$RELEASE_DIR/deploy/aws/install-ec2.sh"
-              bash "$RELEASE_DIR/deploy/aws/deploy-from-artifact.sh"
+          if [ ! -f "$RELEASE_DIR/deploy/aws/install-ec2.sh" ]; then
+            echo "ERROR: install-ec2.sh was not found in deployment archive."
+            exit 1
+          fi
+
+          if [ ! -f "$RELEASE_DIR/deploy/aws/deploy-from-artifact.sh" ]; then
+            echo "ERROR: deploy-from-artifact.sh was not found in deployment archive."
+            exit 1
+          fi
+
+          chmod +x "$RELEASE_DIR/deploy/aws/install-ec2.sh"
+          chmod +x "$RELEASE_DIR/deploy/aws/deploy-from-artifact.sh"
+
+          cd "$RELEASE_DIR"
+
+          echo "Running EC2 installation script..."
+          bash deploy/aws/install-ec2.sh
+
+          echo "Running deployment script..."
+          bash deploy/aws/deploy-from-artifact.sh
+
+          echo "Removing uploaded archive..."
+          rm -f "$ARCHIVE"
+
+          echo "Deployment completed successfully."
           REMOTE_SCRIPT
