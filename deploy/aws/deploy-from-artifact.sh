@@ -3,7 +3,11 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/repair-shop-saas}"
 APP_USER="${APP_USER:-repairshop}"
-SERVICES_DEFAULT="auth-service master-data-service shop-service ticket-service"
+# All 12 services. NOTE: each Spring Boot service needs ~300 MB RAM, so the full set
+# requires a ~4 GB instance (t3.medium). On a 1 GB t3.micro only ~3 fit before the
+# kernel OOM-kills them - upsize the instance before enabling the whole list, or trim
+# SERVICES in /opt/repair-shop-saas/.env to the subset the instance can hold.
+SERVICES_DEFAULT="auth-service ticket-service user-service shop-service technician-service inventory-service marketplace-service pickup-service notification-service subscription-service master-data-service order-service"
 
 # Production database lives on AWS RDS and is managed outside this deployment.
 # We connect to it via JDBC only - we never provision or migrate it from here.
