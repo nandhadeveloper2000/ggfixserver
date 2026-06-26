@@ -2,6 +2,7 @@ name: Deploy Backend to AWS EC2
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -19,18 +20,20 @@ concurrency:
 
 jobs:
   deploy:
+    name: Build and Deploy to EC2
     runs-on: ubuntu-latest
 
     env:
-      EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
-      EC2_USER: ${{ secrets.AWS_EC2_USER }}
-      EC2_PORT: ${{ secrets.AWS_EC2_PORT }}
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+      EC2_SSH_PRIVATE_KEY_B64: ${{ secrets.EC2_SSH_PRIVATE_KEY_B64 }}
 
     steps:
-      - name: Checkout
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,12 +41,15 @@ jobs:
           cache: maven
 
       - name: Build backend services
-        run: mvn -f services/pom.xml clean package -DskipTests
+        run: |
+          set -euo pipefail
+          mvn -f services/pom.xml clean package -DskipTests
 
       - name: Create deployment bundle
         shell: bash
         run: |
           set -euo pipefail
+
           services=(
             auth-service
             user-service
@@ -60,53 +66,97 @@ jobs:
           )
 
           rm -rf deploy-bundle repair-shop-saas-deploy.tgz
-          mkdir -p deploy-bundle/services deploy-bundle/deploy/aws deploy-bundle/postgres
+
+          mkdir -p \
+            deploy-bundle/services \
+            deploy-bundle/deploy/aws \
+            deploy-bundle/postgres
+
           cp -R deploy/aws/. deploy-bundle/deploy/aws/
           cp -R services/postgres/init deploy-bundle/postgres/init
 
           for service in "${services[@]}"; do
+            jar_file="services/$service/target/$service-1.0.0-SNAPSHOT.jar"
+
+            if [ ! -f "$jar_file" ]; then
+              echo "ERROR: JAR file not found: $jar_file"
+              exit 1
+            fi
+
             mkdir -p "deploy-bundle/services/$service"
-            cp "services/$service/target/$service-1.0.0-SNAPSHOT.jar" "deploy-bundle/services/$service/$service.jar"
+            cp "$jar_file" "deploy-bundle/services/$service/$service.jar"
           done
 
           tar -czf repair-shop-saas-deploy.tgz -C deploy-bundle .
 
+          echo "Deployment bundle created successfully."
+          ls -lh repair-shop-saas-deploy.tgz
+
       - name: Configure SSH
         shell: bash
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.AWS_EC2_SSH_KEY }}
         run: |
           set -euo pipefail
-          : "${EC2_HOST:?AWS_EC2_HOST secret is required}"
-          EC2_USER="${EC2_USER:-ec2-user}"
-          EC2_PORT="${EC2_PORT:-22}"
 
-          mkdir -p ~/.ssh
-          install -m 600 /dev/null ~/.ssh/aws_ec2_key
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/aws_ec2_key
-          ssh-keyscan -p "$EC2_PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          : "${EC2_HOST:?EC2_HOST secret is required}"
+          : "${EC2_USER:?EC2_USER secret is required}"
+          : "${EC2_KNOWN_HOSTS:?EC2_KNOWN_HOSTS secret is required}"
+          : "${EC2_SSH_PRIVATE_KEY_B64:?EC2_SSH_PRIVATE_KEY_B64 secret is required}"
+
+          install -d -m 700 "$HOME/.ssh"
+
+          printf '%s' "$EC2_SSH_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          ssh-keygen -lf "$HOME/.ssh/id_ed25519"
+
+      - name: Verify EC2 SSH connection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=20 \
+            "$EC2_USER@$EC2_HOST" \
+            "echo 'SSH connection successful'; hostname; whoami"
 
       - name: Upload deployment bundle
         shell: bash
         run: |
           set -euo pipefail
-          EC2_USER="${EC2_USER:-ec2-user}"
-          EC2_PORT="${EC2_PORT:-22}"
 
-          scp -i ~/.ssh/aws_ec2_key -P "$EC2_PORT" repair-shop-saas-deploy.tgz "$EC2_USER@$EC2_HOST:/tmp/repair-shop-saas-deploy.tgz"
+          scp \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o StrictHostKeyChecking=yes \
+            repair-shop-saas-deploy.tgz \
+            "$EC2_USER@$EC2_HOST:/tmp/repair-shop-saas-deploy.tgz"
 
       - name: Deploy on EC2
         shell: bash
         run: |
           set -euo pipefail
-          EC2_USER="${EC2_USER:-ec2-user}"
-          EC2_PORT="${EC2_PORT:-22}"
 
-          ssh -i ~/.ssh/aws_ec2_key -p "$EC2_PORT" "$EC2_USER@$EC2_HOST" '
-            set -euo pipefail
-            rm -rf /tmp/repair-shop-saas-release
-            mkdir -p /tmp/repair-shop-saas-release
-            tar -xzf /tmp/repair-shop-saas-deploy.tgz -C /tmp/repair-shop-saas-release
-            bash /tmp/repair-shop-saas-release/deploy/aws/install-ec2.sh
-            bash /tmp/repair-shop-saas-release/deploy/aws/deploy-from-artifact.sh
-          '
+          ssh \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            'bash -s' <<'REMOTE_SCRIPT'
+              set -euo pipefail
+
+              RELEASE_DIR="/tmp/repair-shop-saas-release"
+
+              rm -rf "$RELEASE_DIR"
+              mkdir -p "$RELEASE_DIR"
+
+              tar -xzf /tmp/repair-shop-saas-deploy.tgz -C "$RELEASE_DIR"
+
+              chmod +x "$RELEASE_DIR/deploy/aws/install-ec2.sh"
+              chmod +x "$RELEASE_DIR/deploy/aws/deploy-from-artifact.sh"
+
+              bash "$RELEASE_DIR/deploy/aws/install-ec2.sh"
+              bash "$RELEASE_DIR/deploy/aws/deploy-from-artifact.sh"
+          REMOTE_SCRIPT
