@@ -69,7 +69,7 @@ jobs:
             cp "services/$service/target/$service-1.0.0-SNAPSHOT.jar" "deploy-bundle/services/$service/$service.jar"
           done
 
-      tar -czf repair-shop-saas-deploy.tgz -C deploy-bundle .
+          tar -czf repair-shop-saas-deploy.tgz -C deploy-bundle .
 
       - name: Configure SSH
         shell: bash
