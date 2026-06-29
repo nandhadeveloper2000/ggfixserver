@@ -204,12 +204,12 @@ public class TicketService {
 
     /**
      * Returns booking/ticket counts for the shop (for owner dashboard).
-     * Keys: CREATED, IN_DIAGNOSIS, QUOTED, APPROVED, IN_REPAIR, READY, DELIVERED, CANCELLED, total, assignedCount.
+     * Keys: CREATED, IN_DIAGNOSIS, QUOTED, APPROVED, IN_REPAIR, READY, DELIVERED_PROCESSING, DELIVERED, CANCELLED, total, assignedCount.
      */
     @Transactional(readOnly = true)
     public Map<String, Long> getCountsByShop(UUID shopId) {
         Map<String, Long> counts = new HashMap<>();
-        String[] statuses = { "CREATED", "IN_DIAGNOSIS", "QUOTED", "APPROVED", "IN_REPAIR", "READY", "DELIVERED", "CANCELLED" };
+        String[] statuses = { "CREATED", "IN_DIAGNOSIS", "QUOTED", "APPROVED", "IN_REPAIR", "READY", "DELIVERED_PROCESSING", "DELIVERED", "CANCELLED" };
         for (String s : statuses) {
             counts.put(s, ticketRepository.countByShopIdAndStatus(shopId, s));
         }
