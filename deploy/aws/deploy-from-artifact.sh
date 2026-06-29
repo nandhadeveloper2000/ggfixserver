@@ -83,9 +83,13 @@ prepare_layout() {
 }
 
 load_env() {
+  # .env is written by sudo tee (root-owned) and holds secrets, so it is not
+  # world-readable. Read it with sudo - like read_env_value above - instead of
+  # sourcing it directly, which fails with "Permission denied" for the
+  # unprivileged deploy user before copy_jars chowns it to $APP_USER.
   set -a
   # shellcheck disable=SC1091
-  source "$APP_DIR/.env"
+  source <(sudo cat "$APP_DIR/.env")
   set +a
   SERVICES="${SERVICES:-$SERVICES_DEFAULT}"
 }
