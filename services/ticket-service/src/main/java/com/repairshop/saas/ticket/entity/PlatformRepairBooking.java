@@ -57,9 +57,11 @@ public class PlatformRepairBooking {
     // converts tickets.technician_photos_json (a JSON array) into this CSV on
     // every mirror so the customer sees the same images the owner does.
     @Column(name = "technician_photos", columnDefinition = "TEXT") private String technicianPhotos;
-    @Column(name = "front_image_url", length = 500) private String frontImageUrl;
-    @Column(name = "back_image_url", length = 500) private String backImageUrl;
-    @Column(name = "video_url", length = 500) private String videoUrl;
+    // TEXT (not varchar(500)) — Cloudinary fetch-wrapped / normalized image URLs
+    // can exceed 500 chars, which overflowed and 500'd the booking insert.
+    @Column(name = "front_image_url", columnDefinition = "TEXT") private String frontImageUrl;
+    @Column(name = "back_image_url", columnDefinition = "TEXT") private String backImageUrl;
+    @Column(name = "video_url", columnDefinition = "TEXT") private String videoUrl;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
