@@ -10,6 +10,7 @@ public class ModelRequest {
     private UUID categoryId;
     private UUID seriesId;
     private String name;
+    private String modelNumber;
     private String slug;
     private String imageUrl;
     private String imageBase64;

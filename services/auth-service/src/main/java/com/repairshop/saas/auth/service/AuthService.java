@@ -39,6 +39,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final OtpStore otpStore;
+    private final EmailService emailService;
 
     /**
      * Unified login. The identifier in {@code request.email} may be either an
@@ -75,7 +76,13 @@ public class AuthService {
                 throw new UnauthorizedException("Account is disabled");
 
             if (usingOtp) {
-                if (user.getOtpCode() == null || !user.getOtpCode().equals(request.getOtp().trim()))
+                // Accept either the account's static OTP (e.g. 123456 default) or a
+                // freshly-issued OtpStore code (email "sign in with OTP"). Static is
+                // checked first so a valid one doesn't consume the single-use code.
+                String entered = request.getOtp().trim();
+                boolean ok = (user.getOtpCode() != null && user.getOtpCode().equals(entered))
+                        || otpStore.verify(request.getEmail().trim(), entered);
+                if (!ok)
                     throw new UnauthorizedException("Invalid OTP");
             } else {
                 if (user.getPasswordHash() == null
@@ -752,6 +759,79 @@ public class AuthService {
         u.setEmailVerified(true);
         u = userRepository.save(u);
         return toOwnerView(u, shopRepository.findByOwnerUserIdOrderByCreatedAtAsc(u.getId()));
+    }
+
+    // ---- Password reset (forgot password) / passwordless sign-in ---------------
+
+    /**
+     * Issue an OTP for a password reset (or email "sign in with OTP"). For an
+     * EMAIL identifier we generate a 6-digit OtpStore code and email it via
+     * Resend; for a MOBILE identifier the OTP is the default 123456 (no SMS
+     * gateway). The account must exist. In dev the code is surfaced as devOtp.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Map<String, Object> sendPasswordResetOtp(String identifier) {
+        if (identifier == null || identifier.isBlank())
+            throw new BadRequestException("Email or mobile number is required");
+        String id = identifier.trim();
+        boolean isEmail = id.contains("@");
+        User user = (isEmail ? userRepository.findByEmail(id) : findUserByEmailOrPhone(id))
+                .orElseThrow(() -> new BadRequestException("No account found for that email or mobile number."));
+
+        java.util.Map<String, Object> res = new java.util.HashMap<>();
+        if (isEmail) {
+            String code = otpStore.issue(id);
+            boolean sent = emailService.sendOtpEmail(id, code, "reset your GGFIX password");
+            res.put("channel", "EMAIL");
+            res.put("sent", sent);
+            res.put("target", maskEmail(id));
+            res.put("ttlMinutes", 10);
+            res.put("devOtp", code); // dev convenience; production clients ignore this
+        } else {
+            res.put("channel", "MOBILE");
+            res.put("sent", true);
+            res.put("target", maskMobile(id));
+            res.put("defaultOtp", "123456");
+        }
+        res.put("email", isEmail ? id : user.getEmail());
+        return res;
+    }
+
+    /**
+     * Verify the reset OTP and set a new bcrypt password, then return a fresh
+     * login session (auto sign-in). Email OTPs are verified via OtpStore;
+     * mobile uses the default 123456.
+     */
+    @Transactional
+    public LoginResponse resetPasswordWithOtp(String identifier, String otp, String newPassword) {
+        if (identifier == null || identifier.isBlank())
+            throw new BadRequestException("Email or mobile number is required");
+        if (otp == null || otp.isBlank())
+            throw new BadRequestException("OTP is required");
+        if (newPassword == null || newPassword.trim().length() < 8)
+            throw new BadRequestException("Password must be at least 8 characters.");
+        String id = identifier.trim();
+        boolean isEmail = id.contains("@");
+        User user = (isEmail ? userRepository.findByEmail(id) : findUserByEmailOrPhone(id))
+                .orElseThrow(() -> new BadRequestException("No account found."));
+        boolean ok = isEmail ? otpStore.verify(id, otp.trim()) : "123456".equals(otp.trim());
+        if (!ok)
+            throw new UnauthorizedException("Invalid or expired OTP.");
+        user.setPasswordHash(passwordEncoder.encode(newPassword.trim()));
+        userRepository.save(user);
+        return buildLoginResponse(user, null);
+    }
+
+    private static String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at <= 1) return "***" + (at >= 0 ? email.substring(at) : "");
+        return email.charAt(0) + "***" + email.substring(at - 1);
+    }
+
+    private static String maskMobile(String mobile) {
+        String d = mobile.replaceAll("\\D", "");
+        if (d.length() < 2) return "***";
+        return "***-***-" + d.substring(d.length() - 2);
     }
 
     // ---- Per-location CRUD -----------------------------------------------------

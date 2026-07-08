@@ -9,12 +9,12 @@ APP_USER="${APP_USER:-repairshop}"
 # needed to unpack and run the deployment bundle are required.
 install_packages() {
   if command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y java-21-amazon-corretto-headless git tar gzip openssl
+    sudo dnf install -y java-25-amazon-corretto-headless git tar gzip openssl
   elif command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update
     sudo apt-get install -y openjdk-21-jre-headless git tar gzip openssl
   else
-    echo "Unsupported Linux package manager. Install Java 21, git, tar, gzip, and openssl manually." >&2
+    echo "Unsupported Linux package manager. Install Java 25, git, tar, gzip, and openssl manually." >&2
     exit 1
   fi
 }

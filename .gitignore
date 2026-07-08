@@ -1,26 +1,26 @@
-# Build output
-target/
+# Maven build output
+**/target/
 *.class
-*.jar
-*.war
-*.original
 
-# Runtime output
-logs/
-*.log
-*.err
-*.gz
-data/
-
-# Local environment and secrets
+# env & secrets
 .env
-.env.*
-!.env.example
 
-# IDE and OS files
+# local H2 data
+data/
+*.db
+*.lock.db
+*.trace.db
+
+# IDE
 .idea/
-.vscode/
 *.iml
-.DS_Store
-Thumbs.db
+.vscode/
+.settings/
+.project
+.classpath
 
+# logs
+*.log
+
+# OS
+.DS_Store

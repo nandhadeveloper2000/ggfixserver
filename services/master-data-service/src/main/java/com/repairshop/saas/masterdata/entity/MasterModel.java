@@ -30,7 +30,11 @@ public class MasterModel {
     @Column(nullable = false, length = 255)
     private String name;
 
-    /** SEO-friendly slug, unique within (series_id). */
+    /** Manufacturer model number (e.g. "V2027" for a Vivo Y20). Free-form, optional. */
+    @Column(name = "model_number", length = 100)
+    private String modelNumber;
+
+    /** SEO-friendly slug, unique within (series_id). Auto-generated from name; not shown in the admin UI. */
     @Column(length = 180)
     private String slug;
 

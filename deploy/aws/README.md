@@ -2,7 +2,7 @@
 
 This deploys the Spring Boot backend services to one EC2 host with:
 
-- Java 21
+- Java 25
 - AWS RDS PostgreSQL (managed outside this host - no local database container)
 - systemd services named `repair-shop-saas@<service>`
 - GitHub Actions SSH deployment

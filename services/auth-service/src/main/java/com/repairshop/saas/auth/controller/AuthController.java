@@ -228,6 +228,28 @@ public class AuthController {
         return authService.confirmEmailVerifyOtp(email, otp);
     }
 
+    // ---- Password reset (forgot password) / passwordless sign-in --------------
+
+    @PostMapping("/otp/send")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Send a login/reset OTP",
+            description = "Email identifiers get a generated 6-digit code emailed via Resend; mobile identifiers use the default 123456. Used by 'sign in with OTP' and 'forgot password'.")
+    public Map<String, Object> sendOtp(@RequestBody Map<String, String> body) {
+        String identifier = body == null ? null : (body.get("email") != null ? body.get("email") : body.get("identifier"));
+        return authService.sendPasswordResetOtp(identifier);
+    }
+
+    @PostMapping("/forgot-password/reset")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Reset password with OTP",
+            description = "Verifies the OTP (email via OtpStore, mobile via default 123456), sets a new bcrypt password, and returns a fresh login session.")
+    public LoginResponse resetPassword(@RequestBody Map<String, String> body) {
+        String identifier = body == null ? null : (body.get("email") != null ? body.get("email") : body.get("identifier"));
+        String otp = body == null ? null : body.get("otp");
+        String password = body == null ? null : body.get("password");
+        return authService.resetPasswordWithOtp(identifier, otp, password);
+    }
+
     // ---- Per-location CRUD ----------------------------------------------------
 
     @PostMapping("/shop-owners/{ownerId}/locations")
@@ -304,6 +326,26 @@ public class AuthController {
             description = "Login platform customer by mobile or email. Returns JWT.")
     public CustomerAuthResponse customerLogin(@Valid @RequestBody CustomerLoginRequest request) {
         return customerAuthService.login(request);
+    }
+
+    @PostMapping("/customer/otp/send")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Send a customer login/reset OTP",
+            description = "Email identifiers get a generated 6-digit code emailed via Resend; mobile identifiers use the default 123456. The code is stored on customer_users.otp_code for 'sign in with OTP' and 'forgot password'.")
+    public Map<String, Object> customerSendOtp(@RequestBody Map<String, String> body) {
+        String identifier = body == null ? null : (body.get("email") != null ? body.get("email") : (body.get("mobile") != null ? body.get("mobile") : body.get("identifier")));
+        return customerAuthService.sendOtp(identifier);
+    }
+
+    @PostMapping("/customer/forgot-password/reset")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Reset customer password with OTP",
+            description = "Verifies the OTP against customer_users.otp_code, sets a new bcrypt password, and returns a fresh customer session.")
+    public CustomerAuthResponse customerResetPassword(@RequestBody Map<String, String> body) {
+        String identifier = body == null ? null : (body.get("email") != null ? body.get("email") : (body.get("mobile") != null ? body.get("mobile") : body.get("identifier")));
+        String otp = body == null ? null : body.get("otp");
+        String password = body == null ? null : body.get("password");
+        return customerAuthService.resetPasswordWithOtp(identifier, otp, password);
     }
 
     @GetMapping("/customer-me")
