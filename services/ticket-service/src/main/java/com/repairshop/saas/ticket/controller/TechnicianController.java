@@ -64,7 +64,10 @@ public class TechnicianController {
         UUID shopId = shopIdFrom(request);
         UUID userId = userIdFrom(request);
         if (shopId == null || userId == null) throw new IllegalStateException("Missing shop or user context");
-        return technicianService.recordCheckIn(shopId, userId, body != null ? body.getNotes() : null);
+        return technicianService.recordCheckIn(shopId, userId,
+                body != null ? body.getNotes() : null,
+                body != null ? body.getLatitude() : null,
+                body != null ? body.getLongitude() : null);
     }
 
     @PostMapping("/me/attendance/check-out")
@@ -75,7 +78,10 @@ public class TechnicianController {
         UUID shopId = shopIdFrom(request);
         UUID userId = userIdFrom(request);
         if (shopId == null || userId == null) throw new IllegalStateException("Missing shop or user context");
-        return technicianService.recordCheckOut(shopId, userId, body != null ? body.getNotes() : null);
+        return technicianService.recordCheckOut(shopId, userId,
+                body != null ? body.getNotes() : null,
+                body != null ? body.getLatitude() : null,
+                body != null ? body.getLongitude() : null);
     }
 
     @GetMapping("/me/attendance/today")

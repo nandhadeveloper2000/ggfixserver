@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -41,6 +43,25 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
         return response(HttpStatus.NOT_FOUND, ex.getMessage(), req.getRequestURI());
+    }
+
+    /**
+     * Attendance geofence / early-checkout gates. Returns 422 with a flat JSON
+     * body carrying {@code code} + any extra details (distanceMeters, allowedTime)
+     * so the employee app can branch on the code and show a precise message.
+     */
+    @ExceptionHandler(AttendanceBlockedException.class)
+    public ResponseEntity<Map<String, Object>> handleAttendanceBlocked(
+            AttendanceBlockedException ex, HttpServletRequest req) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", ex.getStatus());
+        body.put("error", ex.getCode());
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        body.put("path", req.getRequestURI());
+        if (ex.getDetails() != null) body.putAll(ex.getDetails());
+        return ResponseEntity.status(ex.getStatus()).body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
