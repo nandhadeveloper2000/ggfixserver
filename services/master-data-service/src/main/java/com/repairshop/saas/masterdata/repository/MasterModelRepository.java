@@ -16,4 +16,8 @@ public interface MasterModelRepository extends JpaRepository<MasterModel, UUID> 
     List<MasterModel> findBySeriesIdOrderByName(UUID seriesId);
 
     List<MasterModel> findByCategoryIdOrderByName(UUID categoryId);
+
+    /** Exact (case-insensitive) manufacturer model-number match — the bridge
+     *  used by the IMEI.info lookup (e.g. "CPH2735" -> OPPO A5 5G). */
+    List<MasterModel> findByModelNumberIgnoreCase(String modelNumber);
 }

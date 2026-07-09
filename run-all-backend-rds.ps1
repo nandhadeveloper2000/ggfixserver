@@ -27,6 +27,28 @@ $RdsUser = "postgres"
 $RdsPass = "Globogreen1254"
 $JdbcUrl = "jdbc:postgresql://${RdsHost}:${RdsPort}/${RdsDb}?sslmode=require"
 
+# ---- Optional IMEI.info lookup (master-data-service /master/imei-lookup) ----
+# Enables the "scan/enter IMEI -> auto-detect brand & model" step in the shop
+# app's new-booking flow. Left blank => endpoint returns NOT_CONFIGURED and the
+# app falls back to manual device selection. NEVER hardcode the token here (this
+# file is committed) — set these in your shell before running the script:
+#     $env:IMEI_API_TOKEN     = '71ddea7c-...your token...'
+#     $env:IMEI_API_SERVICE_ID = '<numeric service id from your IMEI.info dashboard>'
+$ImeiToken     = $env:IMEI_API_TOKEN
+$ImeiServiceId = $env:IMEI_API_SERVICE_ID
+
+# ---- Cloudinary image hosting (master-data-service /media/upload) ----
+# WITHOUT these, every admin image upload (brand/model/category logos) falls back
+# to a base64 data URI stored in image_url (bloats the DB and breaks AVIF/alpha
+# rendering on some Android devices). WITH them, uploads go to Cloudinary and
+# image_url is a proper https URL. Cloud name is public (it's in every image URL,
+# account "dg6c0g4gi"); the api-key/secret are secret — set them in your shell:
+#     $env:CLOUDINARY_API_KEY    = '...'
+#     $env:CLOUDINARY_API_SECRET = '...'
+$CloudinaryCloud  = if ($env:CLOUDINARY_CLOUD_NAME) { $env:CLOUDINARY_CLOUD_NAME } else { 'dg6c0g4gi' }
+$CloudinaryKey    = $env:CLOUDINARY_API_KEY
+$CloudinarySecret = $env:CLOUDINARY_API_SECRET
+
 $services = @(
     @{ Name = "Auth";         Dir = "auth-service";         Port = 8081 },
     @{ Name = "Master Data";  Dir = "master-data-service";  Port = 8091 },
@@ -50,6 +72,11 @@ foreach ($s in $services) {
            "`$env:SPRING_DATASOURCE_URL='$JdbcUrl';" +
            "`$env:DB_USER='$RdsUser';" +
            "`$env:DB_PASSWORD='$RdsPass';" +
+           "`$env:IMEI_API_TOKEN='$ImeiToken';" +
+           "`$env:IMEI_API_SERVICE_ID='$ImeiServiceId';" +
+           "`$env:CLOUDINARY_CLOUD_NAME='$CloudinaryCloud';" +
+           "`$env:CLOUDINARY_API_KEY='$CloudinaryKey';" +
+           "`$env:CLOUDINARY_API_SECRET='$CloudinarySecret';" +
            "cd '$dir'; mvn -q -DskipTests spring-boot:run"
     Start-Process powershell -ArgumentList @("-NoExit","-Command",$cmd) | Out-Null
     Start-Sleep -Seconds 2
