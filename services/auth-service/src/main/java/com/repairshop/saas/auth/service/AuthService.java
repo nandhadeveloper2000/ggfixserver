@@ -23,6 +23,8 @@ import com.repairshop.saas.auth.repository.ShopRepository;
 import com.repairshop.saas.auth.repository.UserRepository;
 import com.repairshop.saas.auth.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class AuthService {
 
@@ -40,6 +43,10 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final OtpStore otpStore;
     private final EmailService emailService;
+    // ticket-service owns the `technicians` table but shares this Postgres DB.
+    // We JDBC-link a technician's user_id when provisioning its login so the
+    // employee app's /technicians/me (keyed by user_id) resolves.
+    private final JdbcTemplate jdbc;
 
     /**
      * Unified login. The identifier in {@code request.email} may be either an
@@ -367,14 +374,36 @@ public class AuthService {
                     .isActive(true)
                     .build());
         });
-        if (userRepository.existsByShop_IdAndEmail(shop.getId(), request.getEmail()))
-            throw new BadRequestException("Email already registered for this shop");
+        String phone = trimToNull(request.getPhone());
+        String email = trimToNull(request.getEmail());
+
+        // A login needs an identifier. Staff are usually keyed by mobile, so when
+        // no email is supplied we synthesise a stable placeholder from the phone
+        // (users.email is NOT NULL + unique per shop). Login still resolves by the
+        // real phone via findUserByEmailOrPhone, so the placeholder is never typed.
+        if (email == null) {
+            if (phone == null)
+                throw new BadRequestException("Provide an email or a mobile number to create the login");
+            email = phone.replaceAll("[^0-9]", "") + "@staff.local";
+        }
+
+        if (userRepository.existsByShop_IdAndEmail(shop.getId(), email))
+            throw new BadRequestException("A login already exists for this employee");
+
+        // Password is optional (OTP-only login). OTP defaults to 123456 — the same
+        // staff default used for shop-mobile login (see shops.mobile_otp_code and
+        // createShopOwner) — so a mobile-only employee can sign in immediately.
+        String rawPassword = trimToNull(request.getPassword());
+        String otp = trimToNull(request.getOtp());
+        if (otp == null) otp = "123456";
 
         User user = User.builder()
                 .shop(shop)
-                .email(request.getEmail())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .name(request.getName() != null ? request.getName() : request.getEmail())
+                .email(email)
+                .phone(phone)
+                .passwordHash(rawPassword != null ? passwordEncoder.encode(rawPassword) : null)
+                .otpCode(otp)
+                .name(request.getName() != null ? request.getName() : email)
                 .role(canonicalEmployeeRole(request.getRoleLabel()))
                 .isActive(true)
                 .build();
@@ -385,8 +414,39 @@ public class AuthService {
                 .shopId(shop.getId().toString())
                 .shopSlug(shop.getSlug())
                 .email(user.getEmail())
-                .message("Technician added")
+                .message("Employee login created")
                 .build();
+    }
+
+    /**
+     * Best-effort: link an existing (not-yet-linked) technician row for this
+     * shop+phone to the given login's user_id so the employee app's
+     * /technicians/me (which resolves the technician by user_id) works.
+     *
+     * Called from the controller AFTER registerTechnician commits — so it runs
+     * in its OWN transaction on an already-persisted user (no FK ordering issue),
+     * and a link failure can never roll back the created login. In the normal
+     * owner-app add flow the technician row doesn't exist yet, so this updates 0
+     * rows (harmless) and the app links it itself with the returned userId.
+     */
+    @Transactional
+    public void linkTechnicianByPhone(UUID shopId, String userId, String phone) {
+        if (shopId == null || userId == null || phone == null || phone.trim().isEmpty()) return;
+        try {
+            int n = jdbc.update(
+                    "UPDATE technicians SET user_id = CAST(? AS uuid) "
+                            + "WHERE shop_id = CAST(? AS uuid) AND phone = ? AND user_id IS NULL",
+                    userId, shopId.toString(), phone.trim());
+            log.info("linkTechnicianByPhone: linked {} technician row(s) shop={} phone={}", n, shopId, phone);
+        } catch (Exception e) {
+            log.warn("linkTechnicianByPhone failed shop={} phone={}: {}", shopId, phone, e.getMessage());
+        }
+    }
+
+    private static String trimToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     @Transactional

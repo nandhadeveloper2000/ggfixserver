@@ -305,7 +305,12 @@ public class AuthController {
     @Operation(summary = "Add technician", description = "Add a technician user to a shop")
     public RegisterResponse addTechnician(@PathVariable UUID shopId,
                                          @Valid @RequestBody RegisterTechnicianRequest request) {
-        return authService.registerTechnician(shopId, request);
+        RegisterResponse resp = authService.registerTechnician(shopId, request);
+        // Separate transaction: link an existing technician row (by shop+phone)
+        // to the new login so /technicians/me resolves. Best-effort — never
+        // rolls back the created login.
+        authService.linkTechnicianByPhone(shopId, resp.getUserId(), request.getPhone());
+        return resp;
     }
 
     // =========================================================================

@@ -119,6 +119,47 @@ public class TechnicianService {
         }
     }
 
+    /**
+     * Delete an employee: removes the technician row and, importantly, the auth
+     * `users` login row it was linked to — so no orphaned login survives.
+     *
+     * The technician's owned HR data (attendance / leave / salary_advance /
+     * experience) is removed automatically by ON DELETE CASCADE, and
+     * tickets.assigned_technician_id is nulled by ON DELETE SET NULL. KYC
+     * documents have no FK cascade, so they're deleted explicitly first.
+     * repair_bookings assignment pointers have no FK and are left as historical.
+     */
+    @Transactional
+    public void deleteTechnician(UUID shopId, UUID id) {
+        Technician t = technicianRepository.findByShopIdAndId(shopId, id)
+                .orElseThrow(() -> new ResourceNotFoundException("Technician not found: " + id));
+        UUID userId = t.getUserId();
+
+        // KYC docs (no FK cascade) — clear before the row goes.
+        try {
+            jdbc.update("DELETE FROM technician_kyc_documents WHERE technician_id = CAST(? AS uuid)",
+                    id.toString());
+        } catch (Exception ignore) {
+            // best-effort; absence of the table/rows must not block deletion
+        }
+
+        // Delete the technician; DB cascades handle attendance/leave/advance/
+        // experience and null out ticket assignments. Flush so the row (and its
+        // FK to users) is actually gone before we delete the login below.
+        technicianRepository.delete(t);
+        technicianRepository.flush();
+
+        // Remove the linked auth login (users table lives in the shared DB).
+        if (userId != null) {
+            try {
+                jdbc.update("DELETE FROM users WHERE id = CAST(? AS uuid)", userId.toString());
+            } catch (Exception ignore) {
+                // best-effort — the employee is already removed; a user referenced
+                // elsewhere simply stays. Log-free to avoid noise on shared rows.
+            }
+        }
+    }
+
     /** Self-update: only name, phone, photoUrl, defaultCheckIn, defaultCheckOut. */
     @Transactional
     public TechnicianResponse updateMe(UUID shopId, UUID userId, UpdateTechnicianRequest request) {

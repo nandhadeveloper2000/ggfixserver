@@ -56,6 +56,15 @@ public class TechnicianController {
         return technicianService.updateMe(shopId, userId, body);
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Delete an employee (removes the technician + their linked login and HR data)")
+    public void deleteTechnician(@PathVariable UUID id, HttpServletRequest request) {
+        UUID shopId = shopIdFrom(request);
+        if (shopId == null) throw new IllegalStateException("Missing shop context");
+        technicianService.deleteTechnician(shopId, id);
+    }
+
     @PostMapping("/me/attendance/check-in")
     @Operation(summary = "Record check-in for today")
     public AttendanceRecordResponse checkIn(
