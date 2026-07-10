@@ -387,8 +387,20 @@ public class AuthService {
             email = phone.replaceAll("[^0-9]", "") + "@staff.local";
         }
 
-        if (userRepository.existsByShop_IdAndEmail(shop.getId(), email))
-            throw new BadRequestException("A login already exists for this employee");
+        // Idempotent: if a login already exists for this shop+identity, return it
+        // instead of 400. Lets a re-add — or an add whose technician step didn't
+        // finish the first time — succeed and hand the caller the existing userId.
+        java.util.Optional<User> existing = userRepository.findByShop_IdAndEmail(shop.getId(), email);
+        if (existing.isPresent()) {
+            User u = existing.get();
+            return RegisterResponse.builder()
+                    .userId(u.getId().toString())
+                    .shopId(shop.getId().toString())
+                    .shopSlug(shop.getSlug())
+                    .email(u.getEmail())
+                    .message("Employee login already existed")
+                    .build();
+        }
 
         // Password is optional (OTP-only login). OTP defaults to 123456 — the same
         // staff default used for shop-mobile login (see shops.mobile_otp_code and
