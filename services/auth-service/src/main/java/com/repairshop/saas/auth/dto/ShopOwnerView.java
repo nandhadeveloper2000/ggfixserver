@@ -42,6 +42,9 @@ public class ShopOwnerView {
     private Integer sectionsComplete;
     private Integer sectionsTotal;
     private Instant createdAt;
+    // Subscription window (from the owner's subscriptions row; null if none).
+    private Instant activeDate;
+    private Instant inactiveDate;
     private List<ShopLocationView> locations;
 
     @Data

@@ -16,10 +16,12 @@ import com.repairshop.saas.auth.dto.UpdateShopOwnerRequest;
 import com.repairshop.saas.auth.dto.TechnicianResponse;
 import com.repairshop.saas.auth.dto.UserResponse;
 import com.repairshop.saas.auth.entity.Shop;
+import com.repairshop.saas.auth.entity.Subscription;
 import com.repairshop.saas.auth.entity.User;
 import com.repairshop.saas.auth.exception.BadRequestException;
 import com.repairshop.saas.auth.exception.UnauthorizedException;
 import com.repairshop.saas.auth.repository.ShopRepository;
+import com.repairshop.saas.auth.repository.SubscriptionRepository;
 import com.repairshop.saas.auth.repository.UserRepository;
 import com.repairshop.saas.auth.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,6 +44,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final ShopRepository shopRepository;
+    private final SubscriptionRepository subscriptionRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final OtpStore otpStore;
@@ -308,6 +314,9 @@ public class AuthService {
                 .build();
         user = userRepository.save(user);
 
+        // Auto-start a 15-day FREE_TRIAL. Best-effort: never break registration.
+        createFreeTrial(user.getId(), shop.getId());
+
         return RegisterResponse.builder()
                 .userId(user.getId().toString())
                 .shopId(shop.getId().toString())
@@ -315,6 +324,45 @@ public class AuthService {
                 .email(user.getEmail())
                 .message("Registration successful")
                 .build();
+    }
+
+    /**
+     * Create the 15-day FREE_TRIAL subscription row for a newly registered
+     * owner. Wrapped so a failure here (e.g. migration 66 not yet applied) is
+     * logged and swallowed rather than rolling back the registration itself.
+     * Idempotent: skips if the owner already has a subscription.
+     */
+    private void createFreeTrial(UUID ownerUserId, UUID shopId) {
+        try {
+            if (ownerUserId == null) return;
+            if (subscriptionRepository.findByOwnerUserId(ownerUserId).isPresent()) return;
+            Instant now = Instant.now();
+            Instant end = now.plus(15, ChronoUnit.DAYS);
+            Subscription sub = Subscription.builder()
+                    .ownerUserId(ownerUserId)
+                    .shopId(shopId)
+                    .planCode("FREE_TRIAL")
+                    .status("FREE_TRIAL")
+                    .subscriptionType("FREE_TRIAL")
+                    .trialStartDate(now)
+                    .trialEndDate(end)
+                    .activeDate(now)
+                    .inactiveDate(end)
+                    .shopLimit(2)
+                    .employeeLimit(3)
+                    .sellLimit(5)
+                    .pickupServiceEnabled(false)
+                    .buyProductUnlimited(true)
+                    .sellProductUnlimited(false)
+                    .shopCount(1)
+                    .priceAmount(BigDecimal.ZERO)
+                    .startedAt(now)
+                    .currentPeriodEnd(end)
+                    .build();
+            subscriptionRepository.save(sub);
+        } catch (Exception e) {
+            log.warn("createFreeTrial failed for owner={} shop={}: {}", ownerUserId, shopId, e.getMessage());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -515,6 +563,7 @@ public class AuthService {
         owner = userRepository.save(owner);
 
         List<ShopOwnerResponse.ShopSummary> summaries = new java.util.ArrayList<>();
+        UUID primaryShopId = null;
         for (CreateShopOwnerRequest.ShopLocationDto loc : req.getLocations()) {
             String slug = loc.getSlug();
             if (slug == null || slug.isBlank())
@@ -553,9 +602,14 @@ public class AuthService {
                     .isActive(true)
                     .build();
             shop = shopRepository.save(shop);
+            if (primaryShopId == null) primaryShopId = shop.getId();
             summaries.add(ShopOwnerResponse.ShopSummary.builder()
                     .id(shop.getId()).name(shop.getName()).slug(shop.getSlug()).build());
         }
+
+        // Auto-start a 15-day FREE_TRIAL for the owner (first shop = primary),
+        // if none exists yet. Best-effort — never break owner creation.
+        createFreeTrial(owner.getId(), primaryShopId);
 
         return ShopOwnerResponse.builder()
                 .ownerId(owner.getId())
@@ -1028,6 +1082,15 @@ public class AuthService {
 
         boolean emailVerified = Boolean.TRUE.equals(u.getEmailVerified());
 
+        // Subscription window for the admin owner views (null if no row).
+        Instant subActiveDate = null;
+        Instant subInactiveDate = null;
+        Subscription sub = subscriptionRepository.findByOwnerUserId(u.getId()).orElse(null);
+        if (sub != null) {
+            subActiveDate = sub.getActiveDate();
+            subInactiveDate = sub.getInactiveDate();
+        }
+
         List<ShopOwnerView.ShopLocationView> locs = shops.stream().map(s -> ShopOwnerView.ShopLocationView.builder()
                 .id(s.getId())
                 .name(s.getName())
@@ -1082,6 +1145,8 @@ public class AuthService {
                 .sectionsComplete(sections)
                 .sectionsTotal(total)
                 .createdAt(u.getCreatedAt())
+                .activeDate(subActiveDate)
+                .inactiveDate(subInactiveDate)
                 .locations(locs)
                 .build();
     }
