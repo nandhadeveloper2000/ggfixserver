@@ -131,6 +131,34 @@ public class ShopKycDocumentController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Admin review action — set the status of ALL of a shop's KYC documents at
+     * once (verify/reject the whole submission). Uses the existing
+     * status/reject_reason columns, so no schema change is needed. The owner
+     * mobile app already renders APPROVED as green "KYC Approved".
+     *   PATCH /shops/{shopId}/kyc-documents/review
+     *   body: { "status": "APPROVED" | "REJECTED" | "PENDING_REVIEW", "rejectReason": "..." }
+     */
+    @PatchMapping("/review")
+    @Transactional
+    public ResponseEntity<?> review(@PathVariable UUID shopId, @RequestBody ReviewShopKycRequest body) {
+        ensureShopExists(shopId);
+        String status = (body != null && body.getStatus() != null) ? body.getStatus().trim().toUpperCase() : "";
+        if (!status.equals("APPROVED") && !status.equals("REJECTED") && !status.equals("PENDING_REVIEW")) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "status must be APPROVED, REJECTED or PENDING_REVIEW"));
+        }
+        List<ShopKycDocument> docs = kycRepo.findByShopIdOrderByCreatedAtAsc(shopId);
+        String reason = "REJECTED".equals(status) ? body.getRejectReason() : null;
+        for (ShopKycDocument d : docs) {
+            d.setStatus(status);
+            d.setRejectReason(reason);
+            kycRepo.save(d);
+        }
+        log.info("KYC review: shopId={} -> {} ({} docs)", shopId, status, docs.size());
+        return list(shopId);
+    }
+
     private void ensureShopExists(UUID shopId) {
         if (!shopRepository.existsById(shopId)) {
             throw new ResourceNotFoundException("Shop not found: " + shopId);

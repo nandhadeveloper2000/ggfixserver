@@ -50,4 +50,14 @@ public class ShopKycDocumentDtos {
     public static class SaveShopKycRequest {
         private List<ShopKycDocumentInput> documents;
     }
+
+    /** Admin review action — set the status of ALL of a shop's KYC docs. */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ReviewShopKycRequest {
+        private String status;        // APPROVED | REJECTED | PENDING_REVIEW
+        private String rejectReason;  // stored only when status == REJECTED
+    }
 }
