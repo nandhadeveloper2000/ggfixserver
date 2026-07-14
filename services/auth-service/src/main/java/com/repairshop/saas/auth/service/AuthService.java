@@ -802,14 +802,14 @@ public class AuthService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<ShopOwnerView> listShopOwners() {
         return userRepository.findByRoleOrderByCreatedAtDesc("SHOP_OWNER").stream()
                 .map(u -> toOwnerView(u, shopRepository.findByOwnerUserIdOrderByCreatedAtAsc(u.getId())))
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ShopOwnerView getShopOwner(UUID id) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new BadRequestException("Owner not found: " + id));
@@ -1086,6 +1086,13 @@ public class AuthService {
         Instant subActiveDate = null;
         Instant subInactiveDate = null;
         Subscription sub = subscriptionRepository.findByOwnerUserId(u.getId()).orElse(null);
+        if (sub == null && "SHOP_OWNER".equals(u.getRole()) && shops != null && !shops.isEmpty()) {
+            // Auto-heal: owners created before the subscription feature have no row.
+            // Give them a fresh 15-day free trial on first admin read so active/
+            // inactive dates populate (guarded + swallows errors — needs a writable tx).
+            createFreeTrial(u.getId(), shops.get(0).getId());
+            sub = subscriptionRepository.findByOwnerUserId(u.getId()).orElse(null);
+        }
         if (sub != null) {
             subActiveDate = sub.getActiveDate();
             subInactiveDate = sub.getInactiveDate();
