@@ -86,6 +86,7 @@ public class MasterDataController {
                 .imageUrl(req.getImageUrl())
                 .imageBase64(req.getImageBase64())
                 .category(req.getCategory())
+                .sellActive(req.getSellActive() == null ? Boolean.TRUE : req.getSellActive())
                 .build();
         return ResponseEntity.ok(modelRepo.save(e));
     }
@@ -103,6 +104,18 @@ public class MasterDataController {
                     e.setImageUrl(req.getImageUrl());
                     if (req.getImageBase64() != null) e.setImageBase64(req.getImageBase64());
                     e.setCategory(req.getCategory());
+                    if (req.getSellActive() != null) e.setSellActive(req.getSellActive());
+                    return ResponseEntity.ok(modelRepo.save(e));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    /** Toggle only the Sell-flow visibility flag — used by the admin Models table switch. */
+    @PatchMapping("/models/{id}/sell-active")
+    public ResponseEntity<MasterModel> setModelSellActive(@PathVariable UUID id, @RequestBody ModelRequest req) {
+        return modelRepo.findById(id)
+                .map(e -> {
+                    e.setSellActive(req.getSellActive() != null ? req.getSellActive() : Boolean.TRUE);
                     return ResponseEntity.ok(modelRepo.save(e));
                 })
                 .orElse(ResponseEntity.notFound().build());

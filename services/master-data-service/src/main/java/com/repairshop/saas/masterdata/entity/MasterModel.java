@@ -57,4 +57,14 @@ public class MasterModel {
     /** Optional FK -> master_device_series.id. */
     @Column(name = "series_id")
     private UUID seriesId;
+
+    /**
+     * Whether this model is offered in the customer Sell / trade-in flow.
+     * Controlled by the admin Models table "Sell Active" switch. Defaults true
+     * so existing models stay sellable; the mobile Sell product picker hides any
+     * model with this set to false.
+     */
+    @Builder.Default
+    @Column(name = "sell_active", nullable = false)
+    private Boolean sellActive = true;
 }

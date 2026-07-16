@@ -15,4 +15,5 @@ public class ModelRequest {
     private String imageUrl;
     private String imageBase64;
     private String category;
+    private Boolean sellActive;
 }
