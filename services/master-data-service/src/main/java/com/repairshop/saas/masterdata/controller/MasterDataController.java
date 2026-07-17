@@ -74,6 +74,15 @@ public class MasterDataController {
         return ResponseEntity.ok(modelRepo.findByBrandIdOrderByName(brandId));
     }
 
+    /** Single model, incl. its inline colors + ram_storage — used by the mobile
+     * variant pickers to read a model's configured options in one fetch. */
+    @GetMapping("/models/{id}")
+    public ResponseEntity<MasterModel> getModel(@PathVariable UUID id) {
+        return modelRepo.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping("/models")
     public ResponseEntity<MasterModel> createModel(@RequestBody ModelRequest req) {
         MasterModel e = MasterModel.builder()
@@ -87,6 +96,8 @@ public class MasterDataController {
                 .imageBase64(req.getImageBase64())
                 .category(req.getCategory())
                 .sellActive(req.getSellActive() == null ? Boolean.TRUE : req.getSellActive())
+                .colors(req.getColors() != null ? req.getColors() : new java.util.ArrayList<>())
+                .ramStorage(req.getRamStorage() != null ? req.getRamStorage() : new java.util.ArrayList<>())
                 .build();
         return ResponseEntity.ok(modelRepo.save(e));
     }
@@ -105,6 +116,8 @@ public class MasterDataController {
                     if (req.getImageBase64() != null) e.setImageBase64(req.getImageBase64());
                     e.setCategory(req.getCategory());
                     if (req.getSellActive() != null) e.setSellActive(req.getSellActive());
+                    if (req.getColors() != null) e.setColors(req.getColors());
+                    if (req.getRamStorage() != null) e.setRamStorage(req.getRamStorage());
                     return ResponseEntity.ok(modelRepo.save(e));
                 })
                 .orElse(ResponseEntity.notFound().build());

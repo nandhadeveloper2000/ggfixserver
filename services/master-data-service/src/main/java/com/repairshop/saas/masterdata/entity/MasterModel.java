@@ -2,7 +2,11 @@ package com.repairshop.saas.masterdata.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -67,4 +71,31 @@ public class MasterModel {
     @Builder.Default
     @Column(name = "sell_active", nullable = false)
     private Boolean sellActive = true;
+
+    /**
+     * Colors this model ships in, stored inline as a jsonb array of names
+     * (e.g. ["Diamond Black","Skyline Blue","Cosmic Green"]). Replaces the old
+     * per-model colour rows in master_model_variants. Master_colors still holds
+     * each name's swatch hex for display; this column is the source of truth for
+     * which colours a model actually offers.
+     *
+     * columnDefinition is intentionally omitted: on Postgres Hibernate maps
+     * SqlTypes.JSON to jsonb (matching migration 70) and the default (validate)
+     * profile relies on the migration for DDL; leaving it off lets the H2 dev
+     * profile fall back to its own JSON type instead of choking on "jsonb".
+     */
+    @Builder.Default
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "colors")
+    private List<String> colors = new ArrayList<>();
+
+    /**
+     * RAM + Storage combinations this model ships in, stored inline as a jsonb
+     * array of labels (e.g. ["4 GB + 128 GB","6 GB + 128 GB"]). Replaces the old
+     * per-model spec rows in master_model_variants.
+     */
+    @Builder.Default
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "ram_storage")
+    private List<String> ramStorage = new ArrayList<>();
 }
