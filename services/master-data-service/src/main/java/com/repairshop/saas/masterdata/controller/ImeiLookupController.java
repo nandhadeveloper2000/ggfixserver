@@ -150,7 +150,7 @@ public class ImeiLookupController {
         // (a) Strongest signal: exact manufacturer model-number match.
         for (String mn : modelNumbers) {
             if (mn == null || mn.isBlank()) continue;
-            List<MasterModel> byNumber = modelRepo.findByModelNumberIgnoreCase(mn.trim());
+            List<MasterModel> byNumber = modelRepo.findByModelNumberContainingIgnoreCase(mn.trim());
             if (!byNumber.isEmpty()) return byNumber.get(0);
         }
         // (b) Fall back to brand + fuzzy model-name match.

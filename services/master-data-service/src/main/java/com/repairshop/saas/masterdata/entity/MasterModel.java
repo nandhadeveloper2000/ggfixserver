@@ -34,9 +34,21 @@ public class MasterModel {
     @Column(nullable = false, length = 255)
     private String name;
 
-    /** Manufacturer model number (e.g. "V2027" for a Vivo Y20). Free-form, optional. */
-    @Column(name = "model_number", length = 100)
-    private String modelNumber;
+    /**
+     * Manufacturer model number(s), stored inline as a jsonb array of codes
+     * (e.g. ["MZB0L8AIN","MZB0L88IN","MZB0L89IN"]). A device is often sold under
+     * several regional model numbers; each is a distinct entry so the IMEI lookup
+     * can match any one of them. Was a single slash-separated string before
+     * migration 73. Optional — an empty array means "no model number recorded".
+     *
+     * Same jsonb mapping as {@link #colors} / {@link #ramStorage}: columnDefinition
+     * is omitted so Postgres maps SqlTypes.JSON to jsonb (migration 73) while the
+     * H2 dev profile falls back to its own JSON type.
+     */
+    @Builder.Default
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "model_number")
+    private List<String> modelNumber = new ArrayList<>();
 
     /** SEO-friendly slug, unique within (series_id). Auto-generated from name; not shown in the admin UI. */
     @Column(length = 180)

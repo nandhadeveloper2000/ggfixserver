@@ -11,7 +11,8 @@ public class ModelRequest {
     private UUID categoryId;
     private UUID seriesId;
     private String name;
-    private String modelNumber;
+    /** Manufacturer model number(s), e.g. ["MZB0L8AIN","MZB0L88IN"]. */
+    private List<String> modelNumber;
     private String slug;
     private String imageUrl;
     private String imageBase64;
