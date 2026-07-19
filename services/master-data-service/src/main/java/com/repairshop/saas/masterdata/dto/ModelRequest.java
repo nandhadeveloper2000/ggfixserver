@@ -13,6 +13,8 @@ public class ModelRequest {
     private String name;
     /** Manufacturer model number(s), e.g. ["MZB0L8AIN","MZB0L88IN"]. */
     private List<String> modelNumber;
+    /** Additional secondary identifier code(s), e.g. ["V2143","V2168"]. */
+    private List<String> otherNumber;
     private String slug;
     private String imageUrl;
     private String imageBase64;
