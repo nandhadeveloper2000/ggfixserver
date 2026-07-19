@@ -50,22 +50,6 @@ public class MasterModel {
     @Column(name = "model_number")
     private List<String> modelNumber = new ArrayList<>();
 
-    /**
-     * Additional identifier code(s) for the device — any secondary numbers a
-     * manufacturer/region assigns beyond the primary model number (e.g. a board
-     * or SKU code). Stored inline as a jsonb array, exactly like {@link #modelNumber}:
-     * each code is a distinct entry so several can be recorded per model.
-     * Optional — an empty array means "no other number recorded".
-     *
-     * Same jsonb mapping as {@link #modelNumber} / {@link #colors}: columnDefinition
-     * is omitted so Postgres maps SqlTypes.JSON to jsonb (migration 74) while the
-     * H2 dev profile falls back to its own JSON type.
-     */
-    @Builder.Default
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "other_number")
-    private List<String> otherNumber = new ArrayList<>();
-
     /** SEO-friendly slug, unique within (series_id). Auto-generated from name; not shown in the admin UI. */
     @Column(length = 180)
     private String slug;

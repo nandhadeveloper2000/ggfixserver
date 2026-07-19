@@ -91,7 +91,6 @@ public class MasterDataController {
                 .seriesId(req.getSeriesId())
                 .name(req.getName())
                 .modelNumber(req.getModelNumber() != null ? req.getModelNumber() : new java.util.ArrayList<>())
-                .otherNumber(req.getOtherNumber() != null ? req.getOtherNumber() : new java.util.ArrayList<>())
                 .slug(req.getSlug())
                 .imageUrl(req.getImageUrl())
                 .imageBase64(req.getImageBase64())
@@ -112,7 +111,6 @@ public class MasterDataController {
                     if (req.getSeriesId() != null) e.setSeriesId(req.getSeriesId());
                     e.setName(req.getName());
                     if (req.getModelNumber() != null) e.setModelNumber(req.getModelNumber());
-                    if (req.getOtherNumber() != null) e.setOtherNumber(req.getOtherNumber());
                     if (req.getSlug() != null) e.setSlug(req.getSlug());
                     e.setImageUrl(req.getImageUrl());
                     if (req.getImageBase64() != null) e.setImageBase64(req.getImageBase64());
